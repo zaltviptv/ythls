@@ -26,7 +26,10 @@ app.get("/video/:id.m3u8", async (req, res) => {
     }
 
     const { stdout } = await execAsync(
-      `yt-dlp -g -f "best[protocol*=m3u8]" "${url}"`
+      `yt-dlp -g -f "best[protocol*=m3u8]" \
+  --extractor-args "youtube:player_client=android" \
+  --user-agent "com.google.android.youtube/17.36.4" \
+  "${url}"`
     );
 
     const m3u8 = stdout.trim();
@@ -55,7 +58,10 @@ app.get("/channel/:id.m3u8", async (req, res) => {
 
   try {
     const { stdout } = await execAsync(
-      `yt-dlp -g -f "best[protocol*=m3u8]" --user-agent "Mozilla/5.0" "${url}/live"`
+      `yt-dlp -g -f "best[protocol*=m3u8]" \
+  --extractor-args "youtube:player_client=android" \
+  --user-agent "com.google.android.youtube/17.36.4" \
+  "${url}"`
     );
 
     const m3u8 = stdout.trim();
@@ -75,4 +81,3 @@ app.get("/channel/:id.m3u8", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Proxy running on port ${PORT}`);
 });
-
