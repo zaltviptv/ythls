@@ -2,7 +2,6 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Cài ffmpeg + python
 RUN apk update && apk add --no-cache \
   ffmpeg \
   python3 \
@@ -10,10 +9,14 @@ RUN apk update && apk add --no-cache \
   curl \
   bash
 
+RUN pip3 install -U yt-dlp
+
+ENV PATH="/root/.local/bin:$PATH"
+
 COPY . .
 
 RUN npm install
 
 EXPOSE 10000
 
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
