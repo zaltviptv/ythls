@@ -1,17 +1,14 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-RUN apk update && apk add --no-cache \
+RUN apt-get update && apt-get install -y \
   ffmpeg \
   python3 \
-  py3-pip \
+  python3-pip \
   curl \
-  bash
-
-RUN pip3 install -U yt-dlp
-
-ENV PATH="/root/.local/bin:$PATH"
+  && pip3 install -U yt-dlp \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
