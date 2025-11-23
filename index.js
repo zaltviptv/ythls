@@ -1,15 +1,17 @@
 import express from "express";
-import ytdlp from "yt-dlp-exec";
+import { exec } from "child_process";
+import util from "util";
 
+const execAsync = util.promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // Cache đơn giản
-let cache = {};
+const cache = {};
 
-// Health
+// Health check
 app.get("/", (req, res) => {
-  res.send("YT Live Proxy Running...");
+  res.send("✅ YT Live Proxy Running...");
 });
 
 // Lấy m3u8 theo VIDEO ID
@@ -18,23 +20,29 @@ app.get("/video/:id.m3u8", async (req, res) => {
   const url = `https://www.youtube.com/watch?v=${id}`;
 
   try {
-    if (cache[id] && Date.now() - cache[id].time < 1000 * 60 * 30) {
+    // Cache 30 phút
+    if (cache[id] && Date.now() - cache[id].time < 30 * 60 * 1000) {
       return res.redirect(cache[id].m3u8);
     }
 
-    const streamUrl = await ytdlp(url, {
-      format: "best",
-      getUrl: true,
-    });
+    const { stdout } = await execAsync(
+      `yt-dlp -g -f "best[protocol*=m3u8]" "${url}"`
+    );
+
+    const m3u8 = stdout.trim();
+    if (!m3u8.includes("m3u8")) {
+      return res.status(500).send("❌ Không lấy được m3u8 (video chưa live?)");
+    }
 
     cache[id] = {
-      m3u8: streamUrl.trim(),
-      time: Date.now(),
+      m3u8,
+      time: Date.now()
     };
 
-    res.redirect(streamUrl.trim());
+    res.redirect(m3u8);
   } catch (e) {
-    res.status(500).send("Không lấy được M3U8 hoặc video chưa LIVE");
+    console.error(e);
+    res.status(500).send("❌ Lỗi lấy stream");
   }
 });
 
@@ -44,17 +52,23 @@ app.get("/channel/:id.m3u8", async (req, res) => {
   const url = `https://www.youtube.com/channel/${channelId}/live`;
 
   try {
-    const streamUrl = await ytdlp(url, {
-      format: "best",
-      getUrl: true,
-    });
+    const { stdout } = await execAsync(
+      `yt-dlp -g -f "best[protocol*=m3u8]" "${url}"`
+    );
 
-    res.redirect(streamUrl.trim());
+    const m3u8 = stdout.trim();
+    if (!m3u8.includes("m3u8")) {
+      return res.status(500).send("❌ Channel chưa live");
+    }
+
+    res.redirect(m3u8);
   } catch (e) {
-    res.status(500).send("Channel chưa LIVE");
+    console.error(e);
+    res.status(500).send("❌ Lỗi lấy channel live");
   }
 });
 
-app.listen(PORT, () => {
-  console.log("Proxy running on port", PORT);
+// Chạy server
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Proxy running on port ${PORT}`);
 });
