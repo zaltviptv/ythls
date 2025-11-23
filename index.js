@@ -20,13 +20,10 @@ app.get("/video/:id.m3u8", (req, res) => {
 // Proxy theo CHANNEL ID
 app.get("/channel/:id.m3u8", async (req, res) => {
   const channelId = req.params.id;
-  res.send(`
-    Channel live proxy:
-    https://www.youtube.com/channel/${channelId}/live
-    (Render free không auto fetch live video id được)
-  `);
+  res.send(`https://www.youtube.com/channel/${channelId}/live`);
 });
 
 app.listen(PORT, () => {
   console.log("Proxy server running on port", PORT);
 });
+
