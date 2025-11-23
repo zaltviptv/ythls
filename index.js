@@ -1,84 +1,107 @@
 import express from "express";
-import { exec } from "child_process";
-import util from "util";
+import fetch from "node-fetch";
 
-const execAsync = util.promisify(exec);
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 // Cache đơn giản
 const cache = {};
+const CACHE_TTL = 10 * 60 * 1000;
+
+// Danh sách Piped fallback
+const PIPED_LIST = [
+  "https://piped.video",
+  "https://piped.kavin.rocks",
+  "https://piped.adminforge.de"
+];
 
 // Health check
 app.get("/", (req, res) => {
-  res.send("✅ YT Live Proxy Running...");
+  res.send("✅ YT Live Proxy Running (PIPED MODE)...");
 });
 
-// Lấy m3u8 theo VIDEO ID
+// Hàm gọi Piped có fallback
+async function fetchWithFallback(path) {
+  for (const host of PIPED_LIST) {
+    try {
+      const r = await fetch(host + path, { timeout: 8000 });
+      if (r.ok) {
+        return await r.json();
+      }
+    } catch {}
+  }
+  throw new Error("All Piped instances failed");
+}
+
+// ====== LẤY VIDEO ID → M3U8 ======
 app.get("/video/:id.m3u8", async (req, res) => {
   const id = req.params.id;
-  const url = `https://www.youtube.com/watch?v=${id}`;
 
   try {
-    // Cache 30 phút
-    if (cache[id] && Date.now() - cache[id].time < 30 * 60 * 1000) {
+    // cache
+    if (cache[id] && Date.now() - cache[id].time < CACHE_TTL) {
       return res.redirect(cache[id].m3u8);
     }
 
-    const { stdout } = await execAsync(
-      `yt-dlp -g -f "best[protocol*=m3u8]" \
-  --extractor-args "youtube:player_client=android,player_skip=webpage" \
-  --user-agent "com.google.android.youtube/17.36.4" \
-  "${url}"`
-    );
+    const data = await fetchWithFallback(`/api/v1/streams/${id}`);
 
-    const m3u8 = stdout.trim();
-    if (!m3u8.includes("m3u8")) {
-      return res.status(500).send("❌ Không lấy được m3u8 (video chưa live?)");
+    if (!data.hls) {
+      return res.status(404).send("❌ Không có HLS");
     }
 
     cache[id] = {
-      m3u8,
+      m3u8: data.hls,
       time: Date.now()
     };
 
-    res.redirect(m3u8);
+    res.redirect(data.hls);
   } catch (e) {
     console.error(e);
-    res.status(500).send("❌ Lỗi lấy stream");
+    res.status(500).send("❌ Lỗi Piped");
   }
 });
 
-// Lấy m3u8 theo CHANNEL ID
+// ====== CHANNEL → LIVE → M3U8 ======
 app.get("/channel/:id.m3u8", async (req, res) => {
   const channelId = req.params.id;
 
-  // URL channel live
-  const url = `https://www.youtube.com/channel/${channelId}`;
-
   try {
-    const { stdout } = await execAsync(
-     `yt-dlp -g -f "best[protocol*=m3u8]" \
-  --extractor-args "youtube:player_client=android,player_skip=webpage" \
-  --user-agent "com.google.android.youtube/17.36.4" \
-  "${url}"`
+    const ch = await fetchWithFallback(`/api/v1/channels/${channelId}`);
+
+    const live = ch.relatedStreams?.find(
+      (s) => s.type === "stream" || s.duration === -1
     );
 
-    const m3u8 = stdout.trim();
-
-    if (!m3u8 || !m3u8.includes("m3u8")) {
-      return res.status(404).send("❌ Channel chưa live hoặc không lấy được stream");
+    if (!live) {
+      return res.status(404).send("❌ Channel không live");
     }
 
-    res.redirect(m3u8);
-  } catch (err) {
-    console.error("YT ERROR:", err);
-    res.status(500).send("❌ yt-dlp lỗi khi lấy channel live");
+    const videoId = live.url.split("v=")[1];
+
+    // cache theo video
+    if (cache[videoId] && Date.now() - cache[videoId].time < CACHE_TTL) {
+      return res.redirect(cache[videoId].m3u8);
+    }
+
+    const st = await fetchWithFallback(`/api/v1/streams/${videoId}`);
+
+    if (!st.hls) {
+      return res.status(500).send("❌ Không lấy được HLS");
+    }
+
+    cache[videoId] = {
+      m3u8: st.hls,
+      time: Date.now()
+    };
+
+    res.redirect(st.hls);
+  } catch (e) {
+    console.error("PIPE ERROR:", e);
+    res.status(500).send("❌ Piped lỗi");
   }
 });
 
-// Chạy server
+// Start server
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Proxy running on port ${PORT}`);
 });
-
