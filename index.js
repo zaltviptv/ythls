@@ -49,22 +49,25 @@ app.get("/video/:id.m3u8", async (req, res) => {
 // Lấy m3u8 theo CHANNEL ID
 app.get("/channel/:id.m3u8", async (req, res) => {
   const channelId = req.params.id;
-  const url = `https://www.youtube.com/channel/${channelId}/live`;
+
+  // URL channel live
+  const url = `https://www.youtube.com/channel/${channelId}`;
 
   try {
     const { stdout } = await execAsync(
-      `yt-dlp -g -f "best[protocol*=m3u8]" "${url}"`
+      `yt-dlp -g -f "best[protocol*=m3u8]" --user-agent "Mozilla/5.0" "${url}/live"`
     );
 
     const m3u8 = stdout.trim();
-    if (!m3u8.includes("m3u8")) {
-      return res.status(500).send("❌ Channel chưa live");
+
+    if (!m3u8 || !m3u8.includes("m3u8")) {
+      return res.status(404).send("❌ Channel chưa live hoặc không lấy được stream");
     }
 
     res.redirect(m3u8);
-  } catch (e) {
-    console.error(e);
-    res.status(500).send("❌ Lỗi lấy channel live");
+  } catch (err) {
+    console.error("YT ERROR:", err);
+    res.status(500).send("❌ yt-dlp lỗi khi lấy channel live");
   }
 });
 
@@ -72,3 +75,4 @@ app.get("/channel/:id.m3u8", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Proxy running on port ${PORT}`);
 });
+
